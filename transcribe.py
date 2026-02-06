@@ -63,9 +63,68 @@ def get_audio_duration(filepath):
     return 0.0
 
 
-def transcribe_track(filepath, client, model):
+def prompt_speaker_mapping(audio_files):
+    """
+    Interactive prompt to map audio files to character/player names.
+    Returns dict: {filepath: {'character': str, 'player': str, 'label': str}}
+    """
+    print("\n" + "="*60)
+    print("SPEAKER MAPPING")
+    print("For each audio file, enter the character and player name.")
+    print("Press Enter to use the filename as default.")
+    print("="*60 + "\n")
+    
+    mapping = {}
+    
+    for i, filepath in enumerate(sorted(audio_files), 1):
+        filename = filepath.stem
+        print(f"[{i}/{len(audio_files)}] {filepath.name}")
+        
+        # Get character name
+        character = input(f"  Character name [{filename}]: ").strip()
+        if not character:
+            character = filename
+        
+        # Get player name
+        player = input(f"  Player name [skip]: ").strip()
+        
+        # Build label
+        if player:
+            label = f"{character} ({player})"
+        else:
+            label = character
+        
+        mapping[filepath] = {
+            'character': character,
+            'player': player,
+            'label': label
+        }
+        print(f"  → {label}\n")
+    
+    print("="*60 + "\n")
+    return mapping
+
+
+def load_speaker_mapping(mapping_file):
+    """Load speaker mapping from JSON file."""
+    with open(mapping_file, 'r') as f:
+        data = json.load(f)
+    # Convert string keys back to Path objects
+    return {Path(k): v for k, v in data.items()}
+
+
+def save_speaker_mapping(mapping, mapping_file):
+    """Save speaker mapping to JSON file for reuse."""
+    # Convert Path keys to strings
+    data = {str(k): v for k, v in mapping.items()}
+    with open(mapping_file, 'w') as f:
+        json.dump(data, f, indent=2)
+    print(f"Speaker mapping saved to {mapping_file}")
+
+
+def transcribe_track(filepath, client, model, label):
     """Transcribe a single audio track using Whisper API."""
-    print(f"  Transcribing: {filepath.name}...")
+    print(f"  Transcribing: {filepath.name} ({label})...")
     
     with open(filepath, 'rb') as audio_file:
         response = client.audio.transcriptions.create(
@@ -85,25 +144,11 @@ def transcribe_track(filepath, client, model):
     
     return {
         'filename': filepath.name,
-        'speaker': extract_speaker_name(filepath.name),
+        'speaker': label,
         'text': text,
         'segments': segments,
         'duration': get_audio_duration(filepath)
     }
-
-
-def extract_speaker_name(filename):
-    """Extract speaker name from filename. Discord format varies."""
-    # Common patterns: "Username.aac", "Username-001.aac", "track_Username.aac"
-    name = Path(filename).stem
-    # Remove common suffixes
-    for suffix in ['-001', '-002', '_001', '_002', '-1', '-2']:
-        if name.endswith(suffix):
-            name = name[:-len(suffix)]
-    # Remove 'track_' prefix if present
-    if name.startswith('track_'):
-        name = name[6:]
-    return name
 
 
 def merge_transcripts(transcriptions):
@@ -213,6 +258,10 @@ or pass directly with --api-key.
                         help='Include timestamps in output')
     parser.add_argument('--workers', '-w', type=int, default=3,
                         help='Parallel transcription workers (default: 3)')
+    parser.add_argument('--mapping', '-m', help='Load speaker mapping from JSON file')
+    parser.add_argument('--save-mapping', '-s', help='Save speaker mapping to JSON file')
+    parser.add_argument('--no-prompt', action='store_true',
+                        help='Skip speaker prompts, use filenames')
     args = parser.parse_args()
     
     folder = Path(args.folder)
@@ -230,6 +279,24 @@ or pass directly with --api-key.
         sys.exit(1)
     
     print(f"Found {len(audio_files)} audio files")
+    
+    # Get speaker mapping
+    if args.mapping:
+        print(f"Loading speaker mapping from {args.mapping}")
+        speaker_mapping = load_speaker_mapping(args.mapping)
+    elif args.no_prompt:
+        # Use filenames as labels
+        speaker_mapping = {
+            f: {'character': f.stem, 'player': '', 'label': f.stem}
+            for f in audio_files
+        }
+    else:
+        # Interactive prompt
+        speaker_mapping = prompt_speaker_mapping(audio_files)
+        
+        # Optionally save mapping
+        if args.save_mapping:
+            save_speaker_mapping(speaker_mapping, args.save_mapping)
     
     # Get provider config
     provider = PROVIDERS[args.provider]
@@ -258,7 +325,10 @@ or pass directly with --api-key.
     
     with ThreadPoolExecutor(max_workers=args.workers) as executor:
         futures = {
-            executor.submit(transcribe_track, f, client, provider['model']): f 
+            executor.submit(
+                transcribe_track, f, client, provider['model'], 
+                speaker_mapping[f]['label']
+            ): f 
             for f in audio_files
         }
         for future in as_completed(futures):
