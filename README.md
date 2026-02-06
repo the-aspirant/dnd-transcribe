@@ -7,18 +7,25 @@ Transcribe Discord multi-track recordings into speaker-labeled transcripts. Buil
 Discord records voice calls as separate audio files per speaker. This tool:
 
 1. Takes a folder of those AAC/MP3/WAV files
-2. Transcribes each using OpenAI's Whisper API (parallel, fast)
-3. Merges by timestamp into a single transcript with speaker labels
+2. Transcribes each track in parallel
+3. Merges by timestamp into a single speaker-labeled transcript
 4. Outputs clean markdown
+
+## Providers
+
+| Provider | Speed | Cost/hr | 3hr session |
+|----------|-------|---------|-------------|
+| **Groq** (default) | 384x realtime | $0.04 | ~$0.12 |
+| DeepInfra | 83x | $0.03 | ~$0.08 |
+| OpenAI | 28x | $0.36 | ~$1.08 |
+
+Groq is the default — a 3-hour session transcribes in **~28 seconds** for **12 cents**.
 
 ## Installation
 
 ```bash
-# Clone
-git clone https://github.com/YOUR_USERNAME/dnd-transcribe.git
+git clone https://github.com/the-aspirant/dnd-transcribe.git
 cd dnd-transcribe
-
-# Install dependencies
 pip install -r requirements.txt
 
 # Also need ffmpeg
@@ -29,14 +36,20 @@ pip install -r requirements.txt
 ## Usage
 
 ```bash
-# Set your OpenAI API key
-export OPENAI_API_KEY="sk-..."
+# Set your API key (get free key at console.groq.com)
+export GROQ_API_KEY="gsk_..."
 
 # Transcribe a session
 python transcribe.py /path/to/session-folder
 
+# With timestamps
+python transcribe.py /path/to/session-folder --timestamps
+
 # Custom output file
-python transcribe.py /path/to/session-folder --output recap.md
+python transcribe.py /path/to/session-folder -o recap.md
+
+# Use different provider
+python transcribe.py /path/to/session-folder --provider openai
 ```
 
 ### Input
@@ -45,7 +58,7 @@ A folder with audio files from Discord's multi-track recording:
 ```
 session-2024-01-15/
 ├── DungeonMaster.aac
-├── Aragorn.aac
+├── Aragorn.aac  
 ├── Gandalf.aac
 └── Frodo.aac
 ```
@@ -64,18 +77,25 @@ session-2024-01-15/
 **DungeonMaster:** You notice a hooded figure in the corner, watching your group intently.
 ```
 
-## Cost
+With `--timestamps`:
+```markdown
+**[0:00:00] DungeonMaster:** You enter the dimly lit tavern...
 
-Whisper API: ~$0.006 per minute of audio.
-- 3-hour session ≈ $1.08
-- 4 players + DM, each track counts separately
+**[0:00:15] Aragorn:** I look around for any suspicious characters.
+```
+
+## Getting API Keys
+
+- **Groq** (recommended): Free tier at [console.groq.com](https://console.groq.com)
+- **DeepInfra**: [deepinfra.com](https://deepinfra.com)
+- **OpenAI**: [platform.openai.com](https://platform.openai.com)
 
 ## Roadmap
 
-- [ ] Merge tracks to single audio file (for archival)
-- [ ] Local Whisper support (slower, but free)
-- [ ] Timestamp annotations
+- [ ] Merge tracks to single audio file
+- [ ] Local Whisper support (offline, free)
 - [ ] Auto-cleanup of filler words
+- [ ] Speaker identification from voice
 
 ## License
 
