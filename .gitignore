@@ -1,21 +1,8 @@
-# Python
-__pycache__/
-*.py[cod]
-*$py.class
-*.so
-.Python
-venv/
-.venv/
-ENV/
-
-# IDE
-.vscode/
-.idea/
-*.swp
-
-# Project
 *.aac
 *.mp3
 *.wav
-transcript*.md
+*.txt
+!README.md
+speakers.json
 .env
+__pycache__/
