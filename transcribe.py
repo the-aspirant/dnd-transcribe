@@ -17,14 +17,53 @@ from pathlib import Path
 import assemblyai as aai
 
 
-def load_speakers(mapping_path: str) -> dict:
-    """Load speaker mapping from JSON file.
+AUDIO_EXTENSIONS = {".mp3", ".aac", ".wav", ".flac", ".ogg", ".m4a", ".wma", ".opus"}
+
+
+def find_audio_files(audio_dir: Path) -> list[str]:
+    """Find all audio files in a directory."""
+    return sorted(
+        f.name for f in audio_dir.iterdir()
+        if f.is_file() and f.suffix.lower() in AUDIO_EXTENSIONS
+    )
+
+
+def load_speakers(mapping_path: str | None, audio_dir: Path) -> dict:
+    """Load speaker mapping, prompting for any missing labels.
     
-    Format: {"filename": "Label", ...}
-    Example: {"1-kanchosensei.mp3": "Matt (Strahd)", "2-sarah.aac": "Sarah (Ireena)"}
+    If mapping file exists, loads it and prompts for any audio files
+    not yet mapped. If no mapping file, prompts for all audio files.
+    Saves the result back to the mapping file.
     """
-    with open(mapping_path) as f:
-        return json.load(f)
+    existing = {}
+    if mapping_path and Path(mapping_path).exists():
+        with open(mapping_path) as f:
+            existing = json.load(f)
+
+    audio_files = find_audio_files(audio_dir)
+    if not audio_files:
+        print("Error: No audio files found in directory.", file=sys.stderr)
+        sys.exit(1)
+
+    missing = [f for f in audio_files if f not in existing]
+
+    if missing:
+        print(f"Found {len(missing)} unmapped audio file(s). Enter speaker labels:")
+        print("  (e.g. 'Matt (Strahd)' or 'DM - Kancho')\n")
+        for filename in missing:
+            label = input(f"  {filename} → ").strip()
+            if not label:
+                print(f"Error: Label required for {filename}.", file=sys.stderr)
+                sys.exit(1)
+            existing[filename] = label
+
+        # Save updated mapping
+        save_path = mapping_path or str(audio_dir / "speakers.json")
+        with open(save_path, "w") as f:
+            json.dump(existing, f, indent=2)
+        print(f"  Mapping saved to {save_path}\n")
+
+    return {k: v for k, v in existing.items() if k in audio_files}
 
 
 def transcribe_track(filepath: str) -> list[dict]:
@@ -85,7 +124,9 @@ def main():
     )
     parser.add_argument(
         "speakers",
-        help="JSON file mapping filenames to speaker labels."
+        nargs="?",
+        default=None,
+        help="JSON file mapping filenames to speaker labels (optional — will prompt if missing)."
     )
     parser.add_argument(
         "-o", "--output",
@@ -107,16 +148,12 @@ def main():
         sys.exit(1)
     aai.settings.api_key = api_key
 
-    # Load speaker mapping
-    speakers = load_speakers(args.speakers)
+    # Load speaker mapping (prompts for any missing labels)
     audio_dir = Path(args.audio_dir)
-
-    # Validate files exist
-    for filename in speakers:
-        filepath = audio_dir / filename
-        if not filepath.exists():
-            print(f"Error: {filepath} not found.", file=sys.stderr)
-            sys.exit(1)
+    if not audio_dir.is_dir():
+        print(f"Error: {audio_dir} is not a directory.", file=sys.stderr)
+        sys.exit(1)
+    speakers = load_speakers(args.speakers, audio_dir)
 
     # Transcribe all tracks
     print(f"Transcribing {len(speakers)} tracks...")
