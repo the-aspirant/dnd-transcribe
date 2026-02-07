@@ -63,7 +63,18 @@ def load_speakers(mapping_path: str | None, audio_dir: Path) -> dict:
             json.dump(existing, f, indent=2)
         print(f"  Mapping saved to {save_path}\n")
 
-    return {k: v for k, v in existing.items() if k in audio_files}
+    # Show final mapping and confirm
+    active = {k: v for k, v in existing.items() if k in audio_files}
+    print("Speaker mapping:")
+    for filename, label in active.items():
+        print(f"  {filename} → {label}")
+    confirm = input("\nLook correct? [Y/n] ").strip().lower()
+    if confirm and confirm != "y":
+        print("Aborted. Edit your speakers.json and re-run.", file=sys.stderr)
+        sys.exit(1)
+    print()
+
+    return active
 
 
 def transcribe_track(filepath: str) -> list[dict]:
